@@ -1,3 +1,6 @@
 pandas
 ta
 matplotlib
+scikit-learn
+torch
+tqdm
