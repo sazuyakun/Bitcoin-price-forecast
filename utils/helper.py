@@ -3,6 +3,8 @@ from torch.utils.data import TensorDataset, DataLoader
 from sklearn.preprocessing import StandardScaler
 import numpy as np
 import pickle
+from vmdpy import VMD
+import pandas as pd
 
 
 def create_sequences(data, target, seq_len, horizon):
@@ -32,6 +34,58 @@ def scaled_data(df):
     return df
 
 
+def scaled_data_vmd(df, _K=5):
+    target_col = "Price"
+    features = [col for col in df.columns if col != target_col and col != "Date"]
+
+    alpha = 2000
+    tau = 0.0
+    K = _K
+    DC = 0
+    init = 1
+    tol = 1e-7
+
+    vmd_results = {}
+
+    for feature in features:
+        signal = df[feature].values
+
+        u, u_hat, omega = VMD(signal, alpha, tau, K, DC, init, tol)
+
+        vmd_results[feature] = {
+            'modes': u,
+            'freq_domain': u_hat,
+            'frequencies': omega
+        }
+
+        mode_df = pd.DataFrame(u.T, columns=[f'{feature}_Mode_{i+1}' for i in range(K)])
+        vmd_results[feature]['mode_df'] = mode_df
+
+    for feature in features:
+        modes = vmd_results[feature]['modes']
+
+        for i in range(K):
+            column_name = f"{feature}_mode_{i+1}"
+            df[column_name] = modes[i]
+
+    features = [col for col in df.columns if col != target_col and col != "Date"]
+
+    train_size = int(len(df) * 0.7)
+    train_df = df[:train_size]
+
+    # Initialize scaler
+    feature_vmd_scaler = StandardScaler()
+    target_vmd_scaler = StandardScaler()
+
+    feature_vmd_scaler.fit(train_df[features])
+    target_vmd_scaler.fit(train_df[[target_col]])
+
+    df[features] = feature_vmd_scaler.transform(df[features])
+    df[target_col] = target_vmd_scaler.transform(df[[target_col]]).flatten()
+
+    return df
+
+
 def data_loaders(df, X, y, batch_size=256):
     train_size = int(len(df) * 0.7)
     val_size = int(len(df) * 0.1)
@@ -49,4 +103,3 @@ def data_loaders(df, X, y, batch_size=256):
     test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False)
 
     return train_loader, val_loader, test_loader
-
